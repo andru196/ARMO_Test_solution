@@ -20,24 +20,27 @@ namespace ARMO_Test_solution
 {
 	public partial class Form1 : Form
 	{
+		#region необходимые поля
 		const string PLACEHOLDER_FILENAME = "Регулярное выражение для названия файла";//".*\\.ini";
 		const string PLACEHOLDER_FINDSTRING = "Строка поиска";//"1";
-		
-		const int LENGTH = 512 * 1024;
+		const string BUTTON_CONTINUE_TEXT = "Продолжить";
+		const string BUTTON_STOP_TEXT = "Стоп";
 
-		int secCnt;
+		const int LENGTH = 512 * 1024; //Длина буфера, который будет использоваться при поиске
+
+		int secCnt; //счётчики
 		int totalFiles;
 		int findedFiles;
 		int calculatedFiles;
 
-		byte[] bytesUTF8;
+		byte[] bytesUTF8; //Переменные для байтового представления строки поиска
 		byte[] bytesASCII;
 
-		string workDir;
+		string workDir; //Переменные для фиксации полей поиска
 		string workStr;
 		string workPat;
 
-		object lockerEvent = new object();
+		object lockerEvent = new object(); //Переменные для блокировки
 		object lockerStr = new object();
 		object lockerNum = new object();
 
@@ -49,7 +52,9 @@ namespace ARMO_Test_solution
 		
 		public event EventHandler CallClear;
 		public event EventHandler CallTreeChange;
+		#endregion
 
+		#region Инициализация формы 
 		public Form1()
 		{
 			InitializeComponent();
@@ -62,8 +67,7 @@ namespace ARMO_Test_solution
 				findStrTextBox.Text = PLACEHOLDER_FINDSTRING;
 				fileNameTextBox.Text = PLACEHOLDER_FILENAME;
 				folderTextBox.Text = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-				findStrTextBox.GotFocus += TextBox_Focus;
-				fileNameTextBox.GotFocus += TextBox_Focus;
+				
 			});
 
 			if (File.Exists("state.ini"))
@@ -99,11 +103,15 @@ namespace ARMO_Test_solution
 			
 			fileNameTextBox.LostFocus += TextBox_LostFocus;
 			findStrTextBox.LostFocus += TextBox_LostFocus;
+			findStrTextBox.GotFocus += TextBox_Focus;
+			fileNameTextBox.GotFocus += TextBox_Focus;
 			timer.Tick += timer_Tick;
 
 			rezPanel.AutoScroll = true;
 		}
-
+		#endregion
+		
+		#region Реакции на пользователя
 		/// <summary>
 		/// Проверят, не остался ли textBox пустым, после действий пользователя
 		/// </summary>
@@ -136,22 +144,7 @@ namespace ARMO_Test_solution
 			((TextBox)sender).Font = new Font("Microsoft Sans Serif", 8.5f, FontStyle.Regular);
 		}
 
-		/// <summary>
-		/// Выполняет переданное дейсвие
-		/// </summary>
-		private void Form1_UpdateTree(object sender, EventArgs e)
-		{
-			
-			((EventHandlerArgsAddMethod)e).ActionToRightTHread();
-		}
-
-		/// <summary>
-		/// Очищает дерево элементов
-		/// </summary>
-		private void form1_Clear(object sender, EventArgs e)
-		{
-			treeView1.Nodes.Clear();
-		}
+		
 
 
 		/// <summary>
@@ -163,7 +156,7 @@ namespace ARMO_Test_solution
 			timer.Start();
 			timerData.Start();
 			findButton.Enabled = false;
-			((Button)sender).Text = "Стоп";
+			((Button)sender).Text = BUTTON_STOP_TEXT;
 			((Button)sender).Click += stopButton_Click;
 			((Button)sender).Click -= stopButtonContinue_Click;
 		}
@@ -177,7 +170,7 @@ namespace ARMO_Test_solution
 			timer.Stop();
 			timerData.Stop();
 			findButton.Enabled = true;
-			((Button)sender).Text = "Продолжить";
+			((Button)sender).Text = BUTTON_CONTINUE_TEXT;
 			((Button)sender).Click -= stopButton_Click;
 			((Button)sender).Click += stopButtonContinue_Click;
 		}
@@ -208,7 +201,7 @@ namespace ARMO_Test_solution
 			
 		}
 
-
+		
 		/// <summary>
 		/// Мешает пользователю выполнить поиск по не существующей директории
 		/// </summary>
@@ -220,6 +213,41 @@ namespace ARMO_Test_solution
 			}
 			else
 				findButton.Enabled = true;
+		}
+		private void fileNameTextBox_TextChanged(object sender, EventArgs e)
+		{
+			try
+			{
+				new Regex(fileNameTextBox.Text);
+
+			}
+			catch
+			{
+				findButton.Enabled = false;
+				return;
+			}
+			findButton.Enabled = true;
+			
+		}
+
+		private void findButton_EnabledChanged(object sender, EventArgs e)
+		{
+			var state = true;
+			try
+			{
+				new Regex(fileNameTextBox.Text);
+			}
+			catch
+			{
+				state = false;
+			}
+			if (!Directory.Exists(folderTextBox.Text))
+			{
+				state = false;
+			}
+			if (!state)
+				findButton.Enabled = false;
+
 		}
 
 		/// <summary>
@@ -240,10 +268,13 @@ namespace ARMO_Test_solution
 			workStr = findStrTextBox.Text;
 			workDir = folderTextBox.Text;
 			workPat = fileNameTextBox.Text.Trim();
-			
+
 			((Button)sender).Enabled = false;
 			stopButton.Enabled = true;
-			
+			stopButton.Text = BUTTON_STOP_TEXT;
+			stopButton.Click += stopButton_Click;
+			stopButton.Click -= stopButtonContinue_Click;
+
 			bytesUTF8 = Encoding.UTF8.GetBytes(workStr);
 			bytesASCII = Encoding.ASCII.GetBytes(workStr);
 
@@ -259,125 +290,128 @@ namespace ARMO_Test_solution
 			});
 			thread.Start();
 		}
+		#endregion
 
-
+		#region основная логика
 		/// <summary>
 		/// Рекурсивно проходится по дереву катологов, выискивая подходящие файлы
 		/// </summary>
-		void SearchFile(DirectoryInfo dir, TreeNode tr)
+		bool SearchFile(DirectoryInfo directory, TreeNode treeNode)
 		{
+			var finded = false;
+
 			try
 			{
-				foreach (var d in dir.GetDirectories())
+				foreach (var file in directory.GetFiles())
 				{
-					if (!string.IsNullOrEmpty(d.Name.Trim()))
+					lock (lockerNum)
+						totalFiles++;
+					if (!string.IsNullOrEmpty(file.Name.Trim()))
 					{
-						var ntr = new TreeNode(d.Name);
-						lock (lockerEvent)
-							evList.Add(new EventHandlerArgsAddMethod(() =>
-							{
-								tr.Nodes.Add(ntr);
-							}));
-						SearchFile(d, ntr);
-					}
-					else
-						return;
-				}
-				foreach (var f in dir.GetFiles())
-				{
-					if (!string.IsNullOrEmpty(f.Name.Trim()))
-					{
-						lock (lockerNum)
-							totalFiles++;
-						var regex = new Regex(workPat);
-						if (regex.Match(f.Name).Success && AnalizeFile(f))
+						var regex = new Regex(workPat, RegexOptions.IgnoreCase);
+						if (regex.Match(file.Name).Success && AnalizeFile(file))
 						{
+							finded = true;
 							lock (lockerNum)
 								findedFiles++;
+							var evenArg = new EventHandlerArgsAddMethod(() =>
+							{
+								treeNode.ForeColor = Color.Red;
+								var filetr = new TreeNode(file.Name);
+								treeNode.Nodes.Add(filetr);
+								treeView1.AfterSelect += (s, e) =>
+								{
+									if (((TreeView)s).SelectedNode == treeNode)
+									{
+										var y = rezPanel.Size.Width;
+										var but = new Button() { Text = file.Name };
+										but.Location = new Point((rezPanel.Controls.Count % (y / but.Size.Width)) * (but.Size.Width + 2),
+																(but.Height + 5) * (rezPanel.Controls.Count / (y / but.Size.Width)));
+										but.Click += (se, ev) => Process.Start(file.FullName);
+										rezPanel.Controls.Add(but);
+										(new ToolTip()).SetToolTip(but, $"Полное имя файла: {file.FullName}\nРазмер: {file.Length} байт");
+									}
+									else if (((TreeView)s).SelectedNode == filetr)
+										Process.Start(file.FullName);
+								};
+							});
 							lock (lockerEvent)
 							{
-								evList.Add(new EventHandlerArgsAddMethod(() =>
-								{
-									tr.ForeColor = Color.Red;
-									var filetr = new TreeNode(f.Name);
-									tr.Nodes.Add(filetr);
-									treeView1.AfterSelect += (s, e) =>
-									{
-										if (((TreeView)s).SelectedNode == tr)
-										{
-											var y = rezPanel.Size.Width;
-											var but = new Button() { Text = f.Name };
-											but.Location = new Point((rezPanel.Controls.Count % (y / but.Size.Width)) * (but.Size.Width + 2),
-																	(but.Height + 5) * (rezPanel.Controls.Count / (y / but.Size.Width)));
-											but.Click += (se, ev) => Process.Start(f.FullName);
-											rezPanel.Controls.Add(but);
-											(new ToolTip()).SetToolTip(but, $"Полное имя файла: {f.FullName}\nРазмер: {f.Length} байт");
-										}
-										else if (((TreeView)s).SelectedNode == filetr)
-											Process.Start(f.FullName);
-									};
-								}));
+								evList.Add(evenArg);
 							}
 						}
 					}
+				}
+
+				foreach (var dir in directory.GetDirectories())
+				{
+					if (!string.IsNullOrEmpty(dir.Name.Trim()))
+					{
+						var new_treeNode = new TreeNode(dir.Name);
+
+						if (SearchFile(dir, new_treeNode))
+						{
+							finded = true;
+							lock (lockerEvent)
+								evList.Add(new EventHandlerArgsAddMethod(() =>
+								{
+									treeNode.Nodes.Add(new_treeNode);
+								}));
+						}
+					}
 					else
-						return;
+						return false;
 				}
 					
 			}
 			catch (System.UnauthorizedAccessException)
 			{
 				lock (lockerStr)
-					liveFile = "Не доступа к папке";
+					liveFile = "Нет доступа к папке";
 			}
 			finally
 			{
-				lock (lockerEvent)
-					evList.Add(new EventHandlerArgsAddMethod(() =>
-					{
-						if (tr.ForeColor != Color.Red && tr.Nodes.Count == 0 && tr.Parent != null)
-							tr.Parent.Nodes.Remove(tr);
-						else if (tr.Parent == null && tr.Nodes.Count == 0)
-							treeView1.Nodes.Remove(tr);
-					}));
+				if (!finded)
+					lock (lockerEvent)
+						evList.Add(new EventHandlerArgsAddMethod(() =>
+						{
+							if (treeNode.Parent != null)
+								treeNode.Parent.Nodes.Remove(treeNode);
+							else if (treeNode.Parent == null && treeNode.Nodes.Count == 0)
+								treeView1.Nodes.Remove(treeNode);
+						}));
 			}
+			return finded;
 		}
-
 
 		/// <summary>
 		/// Выполняет анализ файла на содержание нужной подстроки
 		/// </summary>
-		/// <param name="fi">Анализируемый файл</param>
-		/// <param name="ct"></param>
+		/// <param name="file">Анализируемый файл</param>
 		/// <returns>Есть ли подстрока</returns>
-		bool AnalizeFile(FileInfo fi)
+		bool AnalizeFile(FileInfo file)
 		{
 			var arrLenUTF8 = bytesUTF8.Length;
 			var arrLenASCII = bytesASCII.Length;
-			int mult = LENGTH / arrLenUTF8 > 2 ? LENGTH / arrLenUTF8 : 2;
+			var mult = LENGTH / arrLenUTF8 > 2 ? LENGTH / arrLenUTF8 : 2;
 			var bufLength = arrLenUTF8 * mult;
 			lock (lockerStr)
-				liveFile = fi.FullName;
+				liveFile = file.FullName;
 			lock (lockerNum)
 				calculatedFiles++;
 			if (arrLenUTF8 == 0)
 				return true;
 			try
 			{
-				using (var stream = fi.OpenRead())
+				using (var stream = file.OpenRead())
 				{
 					var buf = new byte[bufLength];
 					int byteCounter = 0;
+					bool yes = stream.Length > 17;
 					while (byteCounter < stream.Length && (stream.Length >= arrLenASCII))
 					{
-						buf = buf.Skip(bufLength - arrLenUTF8).Concat(buf.Take(bufLength - arrLenUTF8)).ToArray();
-
-						if (byteCounter > 0 && arrLenUTF8 > 1)
-							stream.Seek(-arrLenUTF8, SeekOrigin.Current);
-						byteCounter += stream.Read(buf, byteCounter > 0 ? arrLenUTF8 : 0, byteCounter > 0 ? bufLength - arrLenUTF8 : bufLength);
-
-						if (byteCounter > arrLenUTF8)
-							byteCounter -= arrLenUTF8 - 1;
+						Array.Copy(buf, bufLength - arrLenUTF8 + 1, buf, 0, arrLenUTF8 - 1);
+						byteCounter += stream.Read(buf, byteCounter > 0 ? arrLenUTF8 - 1 : 0, byteCounter > 0 ? bufLength - arrLenUTF8 + 1 : bufLength);
 						if (Encoding.UTF8.GetString(buf).Contains(workStr) || Encoding.Default.GetString(buf).Contains(workStr))
 							return true;
 					}
@@ -390,7 +424,9 @@ namespace ARMO_Test_solution
 			}
 			return false;
 		}
+		#endregion
 
+		#region Таймеры
 		private void timer_Tick(object sender, EventArgs e)
 		{
 			lock(lockerNum)
@@ -401,14 +437,15 @@ namespace ARMO_Test_solution
 			}
 		}
 
+		/// <summary>
+		/// Вызывает событие обновления дерева объектов и когда надо останавливает таймеры
+		/// </summary>
 		private void timerData_Tick(object sender, EventArgs e)
 		{
 			lock (lockerEvent)
 			{
 				foreach (var eva in evList)
-				{
 					this.CallTreeChange(this, eva);
-				}
 				evList.Clear();
 			}
 			if (thread != null && thread.ThreadState == System.Threading.ThreadState.Stopped)
@@ -421,5 +458,26 @@ namespace ARMO_Test_solution
 				stopButton.Enabled = false;
 			}
 		}
+		#endregion
+
+		#region События
+		/// <summary>
+		/// Выполняет переданное дейсвие
+		/// </summary>
+		private void Form1_UpdateTree(object sender, EventArgs e)
+		{
+			((EventHandlerArgsAddMethod)e).ActionToRightTHread();
+		}
+
+		/// <summary>
+		/// Очищает дерево элементов
+		/// </summary>
+		private void form1_Clear(object sender, EventArgs e)
+		{
+			treeView1.Nodes.Clear();
+		}
+		#endregion
+
+		
 	}
 }

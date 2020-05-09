@@ -78,6 +78,7 @@
 			this.findButton.TabIndex = 2;
 			this.findButton.Text = "Найти";
 			this.findButton.UseVisualStyleBackColor = true;
+			this.findButton.EnabledChanged += new System.EventHandler(this.findButton_EnabledChanged);
 			this.findButton.Click += new System.EventHandler(this.findButton_Click);
 			// 
 			// stopButton
@@ -89,7 +90,6 @@
 			this.stopButton.TabIndex = 3;
 			this.stopButton.Text = "Остановить";
 			this.stopButton.UseVisualStyleBackColor = true;
-			this.stopButton.Click += new System.EventHandler(this.stopButton_Click);
 			// 
 			// rezPanel
 			// 
@@ -114,6 +114,7 @@
 			this.fileNameTextBox.Name = "fileNameTextBox";
 			this.fileNameTextBox.Size = new System.Drawing.Size(396, 18);
 			this.fileNameTextBox.TabIndex = 9;
+			this.fileNameTextBox.TextChanged += new System.EventHandler(this.fileNameTextBox_TextChanged);
 			// 
 			// findStrTextBox
 			// 
